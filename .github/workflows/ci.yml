@@ -1,0 +1,38 @@
+name: Case Board CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the case repository
+        uses: actions/checkout@v5
+
+      - name: Build the case board image
+        run: docker build -t case-board:latest .
+
+      - name: Run tests and update the board in the container
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}":/app \
+            -e INVESTIGATOR="${{ github.actor }}" \
+            case-board:latest
+
+      - name: Publish the updated case board
+        if: github.event_name != 'pull_request'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Case board: updated after run by ${{ github.actor }}" || echo "Nothing new to publish"
+          git pull --rebase origin main
+          git push origin main
