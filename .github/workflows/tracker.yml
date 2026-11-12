@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Show the merged pull request
-        run: echo "PR #${{ github.event.pull_request.number }} was merged by ${{ github.actor }}"
+        run: echo "Pull request ${{ github.event.pull_request.number }} was merged by ${{ github.actor }}"
 
       - name: Move linked issues to Done
         env:
