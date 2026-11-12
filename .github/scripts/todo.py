@@ -26,7 +26,7 @@ class CaseBoard:
         ("Collect CCTV footage", True),
         ("Interview the first witness", True),
         ("Image the suspect's laptop", True),
-        ("Analyse phone records", False),
+        ("Analyse phone records", True),
         ("Write the forensic report", False),
     ]
 
