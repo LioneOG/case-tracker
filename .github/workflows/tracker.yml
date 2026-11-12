@@ -1,0 +1,70 @@
+name: Case Board Automation
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  move-issue-to-done:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Show the merged pull request
+        run: echo "PR #${{ github.event.pull_request.number }} was merged by ${{ github.actor }}"
+
+      - name: Move linked issues to Done
+        env:
+          GH_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Find the issues this PR closes, and where each one sits on a project board
+          gh api graphql -f owner="$OWNER" -f repo="$REPO" -F pr="$PR_NUMBER" -f query='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) {
+                  closingIssuesReferences(first: 10) {
+                    nodes {
+                      number
+                      projectItems(first: 10) {
+                        nodes {
+                          id
+                          project {
+                            id
+                            title
+                            field(name: "Status") {
+                              ... on ProjectV2SingleSelectField { id options { id name } }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }' > linked.json
+
+          jq -r '.data.repository.pullRequest.closingIssuesReferences.nodes[]
+            | .number as $issue
+            | .projectItems.nodes[]
+            | [$issue, .id, .project.id, .project.title, .project.field.id,
+               (.project.field.options[] | select(.name == "Done") | .id)]
+            | @tsv' linked.json > moves.tsv
+
+          if [ ! -s moves.tsv ]; then
+            echo "No linked issues found on a project board. Does the PR description say 'Closes #<number>'?"
+            exit 0
+          fi
+
+          # Set each linked issue's Status to Done
+          while IFS=$'\t' read -r ISSUE ITEM PROJECT TITLE FIELD DONE; do
+            gh api graphql -f project="$PROJECT" -f item="$ITEM" -f field="$FIELD" -f done="$DONE" -f query='
+              mutation($project: ID!, $item: ID!, $field: ID!, $done: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $project, itemId: $item, fieldId: $field,
+                  value: { singleSelectOptionId: $done }
+                }) { projectV2Item { id } }
+              }' > /dev/null
+            echo "Issue #$ISSUE moved to Done on '$TITLE'"
+          done < moves.tsv
